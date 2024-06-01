@@ -1,11 +1,19 @@
-use std::net::TcpListener; 
+use std::net::{TcpListener, TcpStream}; 
 use std::result;
 use std::io::Write;
 use std::fmt;
+use std::sync::mpsc::{Sender, Receiver, channel};
+use std::thread;
 
 type Result<T> = result::Result<T,()>;
 
 const SAFE_MODE: bool = false;
+
+enum Message{
+    ClientConnected,
+    ClientDisconnected,
+    NewMessage
+}
 
 struct Sensitive <T> (T);
 
@@ -22,6 +30,17 @@ impl <T: fmt::Display> fmt::Display for Sensitive<T> {
     }
 }
 
+fn client(mut stream: TcpStream){
+    let _  = writeln!(stream, "hallo meine freunde! kkrat").map_err(|err|{
+        eprintln!("ERROR: could not write message to user: {err}")
+    });
+    todo!()
+}
+
+fn server(_message: Receiver<Message>) -> Result<()> {
+    Ok(())
+}
+
 #[allow(unused_variables)]
 fn main()-> Result<()> {
 
@@ -34,12 +53,14 @@ fn main()-> Result<()> {
 
     println!("INFO: listening on {}", Sensitive(address));
 
+    let (message_sender, message_receiver) = channel();
+
+    thread::spawn(|| server(message_receiver));
+
     for stream in listener.incoming(){
         match stream {
-            Ok(mut stream) => {
-                let _ = writeln!(stream, "Hallo meine Freunde! KKraut").map_err(|err|{
-                    eprintln!("ERROR: could not write message : {err}");
-                });
+            Ok(stream) => {
+                thread::spawn(|| {client(stream) });
             },
             Err(err) => {
                 eprintln!("Error: could not accept connection: {:?}", err)
