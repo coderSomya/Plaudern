@@ -1,18 +1,20 @@
 use std::net::{TcpListener, TcpStream}; 
+use std::ops::Deref;
 use std::result;
-use std::io::Write;
+use std::io::{Read,Write};
 use std::fmt;
 use std::sync::mpsc::{Sender, Receiver, channel};
 use std::thread;
+use std::sync::Arc;
 
 type Result<T> = result::Result<T,()>;
 
 const SAFE_MODE: bool = false;
 
 enum Message{
-    ClientConnected,
-    ClientDisconnected,
-    NewMessage
+    ClientConnected(Arc<TcpStream>),
+    ClientDisconnected(Arc<TcpStream>),
+    NewMessage(Vec<u8>)
 }
 
 struct Sensitive <T> (T);
@@ -30,11 +32,20 @@ impl <T: fmt::Display> fmt::Display for Sensitive<T> {
     }
 }
 
-fn client(mut stream: TcpStream){
-    let _  = writeln!(stream, "hallo meine freunde! kkrat").map_err(|err|{
-        eprintln!("ERROR: could not write message to user: {err}")
-    });
-    todo!()
+fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()>{
+    messages.send(Message::ClientConnected(stream.clone())).map_err(|err| {
+        eprintln!("ERROR: could not send message to the server thread: {err}");
+    })?;
+    let mut buffer = Vec::new();
+    buffer.resize(64,0);
+    loop{
+        let n = stream.deref().read(&mut buffer).map_err(|err|{
+           let _ = messages.send(Message::ClientDisconnected(stream.clone()));
+        })?;
+        let _ = messages.send(Message::NewMessage(buffer[0..n].to_vec())).map_err(|err|{
+            eprintln!("ERROR: could not read message from client: {err}");
+        })?;
+    }
 }
 
 fn server(_message: Receiver<Message>) -> Result<()> {
@@ -60,7 +71,8 @@ fn main()-> Result<()> {
     for stream in listener.incoming(){
         match stream {
             Ok(stream) => {
-                thread::spawn(|| {client(stream) });
+                let message_sender = message_sender.clone();
+                thread::spawn(|| client(stream.into(), message_sender));
             },
             Err(err) => {
                 eprintln!("Error: could not accept connection: {:?}", err)
