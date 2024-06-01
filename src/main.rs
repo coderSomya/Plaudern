@@ -5,25 +5,19 @@ use std::fmt;
 
 type Result<T> = result::Result<T,()>;
 
-const SAFE_MODE: bool = true;
+const SAFE_MODE: bool = false;
 
-struct Sensitive <T> {
-    inner: T
-}
+struct Sensitive <T> (T);
 
-impl <T> Sensitive <T>{
-    fn new(inner: T) -> Self{
-        Self {inner}
-    }
-}
 
 impl <T: fmt::Display> fmt::Display for Sensitive<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result{
+        let Self(inner) = self;
         if SAFE_MODE {
             writeln!(f, "[REDACTED]")
         }
         else{
-            writeln!(f, "{inner}", inner=self.inner)
+            writeln!(f, "{inner}")
         }
     }
 }
@@ -33,11 +27,12 @@ fn main()-> Result<()> {
 
     let address = "127.0.0.1:6969";
     let listener = TcpListener::bind(address).map_err(|err|{
-        eprintln!("Error binding to {address}: {}",
-        Sensitive::new(err));
+        eprintln!("Error binding to {}: {}",
+        Sensitive(address),
+        Sensitive(err));
     })?;
 
-    println!("INFO: listening on {address}");
+    println!("INFO: listening on {}", Sensitive(address));
 
     for stream in listener.incoming(){
         match stream {
