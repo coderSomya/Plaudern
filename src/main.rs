@@ -1,4 +1,4 @@
-use std::net::{TcpListener, TcpStream}; 
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream}; 
 use std::ops::Deref;
 use std::result;
 use std::io::{Read,Write};
@@ -7,13 +7,17 @@ use std::sync::mpsc::{Sender, Receiver, channel};
 use std::thread;
 use std::sync::Arc;
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 
 type Result<T> = result::Result<T,()>;
 
 const SAFE_MODE: bool = false;
+const BAN_LIMIT: Duration = Duration::from_secs(10*60);
 
 struct Client {
-    conn: Arc<TcpStream>
+    conn: Arc<TcpStream>,
+    last_message: SystemTime,
+    strike_count: i32
 }
 
 enum Message{
@@ -61,16 +65,25 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()>{
 }
 
 fn server(messages: Receiver<Message>) -> Result<()> {
-    let mut clients = HashMap::new();
+    let mut clients: HashMap<SocketAddr, Client> = HashMap::new();
+    let mut banned_mfs: HashMap<IpAddr, SystemTime> = HashMap::new();
 
     loop {
         let msg = messages.recv().expect("The server receiver is not hung up");
 
         match msg {
             Message::ClientConnected{author} =>{
-                let addr = author.peer_addr().expect("Todo: cache it");
-                clients.insert(addr.clone(), Client{
-                    conn: author.clone()
+                let author_addr = author.peer_addr().expect("Todo: cache it");
+                let now = SystemTime::now();
+                let banned_at = banned_mfs.get(&author_addr.ip());
+
+                if let Some(banned_at) = banned_at{
+                    let duration = now.duration_since(*banned_at).expect("TODO: dont crash if the clock went backward");
+                }
+                clients.insert(author_addr.clone(), Client{
+                    conn: author.clone(),
+                    last_message: SystemTime::now(),
+                    strike_count: 0
                 });
             },
             Message::ClientDisconnected{author}=>{
