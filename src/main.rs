@@ -45,7 +45,7 @@ impl <T: fmt::Display> fmt::Display for Sensitive<T> {
 }
 
 fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()>{
-    messages.send(Message::ClientConnected{author: stream.clone()}.map_err(|err| {
+    messages.send(Message::ClientConnected{author: stream.clone()}).map_err(|err| {
         eprintln!("ERROR: could not send message to the server thread: {err}");
     })?;
     let mut buffer = Vec::new();
@@ -54,11 +54,11 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()>{
         let n = stream.deref().read(&mut buffer).map_err(|err|{
            let _ = messages.send(Message::ClientDisconnected{author:stream.clone()});
         })?;
-        let _ = messages.send(Message::NewMessage(buffer[0..n].to_vec())).map_err(|err|{
+        let _ = messages.send(Message::NewMessage{author: stream.clone(), bytes:buffer[0..n].to_vec()}).map_err(|err|{
             eprintln!("ERROR: could not read message from client: {err}");
         })?;
     }
-
+}
 
 fn server(messages: Receiver<Message>) -> Result<()> {
     let mut clients = HashMap::new();
@@ -81,7 +81,7 @@ fn server(messages: Receiver<Message>) -> Result<()> {
                 let author_addr = author.peer_addr().expect("Todo: cache it");                
                 for (addr, client) in clients.iter(){
                     if *addr != author_addr {
-                        let _ = client.conn.as_ref().write(&bytes)
+                        let _ = client.conn.as_ref().write(&bytes);
                     }
                 }
             }
