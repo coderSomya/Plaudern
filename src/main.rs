@@ -1,4 +1,4 @@
-use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream}; 
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream, Shutdown}; 
 use std::ops::Deref;
 use std::result;
 use std::io::{Read,Write};
@@ -75,16 +75,32 @@ fn server(messages: Receiver<Message>) -> Result<()> {
             Message::ClientConnected{author} =>{
                 let author_addr = author.peer_addr().expect("Todo: cache it");
                 let now = SystemTime::now();
-                let banned_at = banned_mfs.get(&author_addr.ip());
+                let mut banned_at = banned_mfs.remove(&author_addr.ip());
+
+                banned_at = banned_at.and_then(|banned_at| {
+                    let duration = now.duration_since(banned_at).expect("TODO: dont crash if the clock went backward");
+
+                    if duration >= BAN_LIMIT {
+                        None
+                    }
+                    else{
+                        Some(banned_at)
+                    }
+                });
 
                 if let Some(banned_at) = banned_at{
-                    let duration = now.duration_since(*banned_at).expect("TODO: dont crash if the clock went backward");
+                    banned_mfs.insert(author_addr.ip().clone(), banned_at);
+                    let mut author = author.as_ref();
+                    writeln!(author, "You are banned mf");
+                    author.shutdown(Shutdown::Both);
                 }
-                clients.insert(author_addr.clone(), Client{
-                    conn: author.clone(),
-                    last_message: SystemTime::now(),
-                    strike_count: 0
-                });
+                else {
+                    clients.insert(author_addr.clone(), Client{
+                        conn: author.clone(),
+                        last_message: SystemTime::now(),
+                        strike_count: 0
+                    });
+                }
             },
             Message::ClientDisconnected{author}=>{
                 let addr = author.peer_addr().expect("Todo: cache it");
